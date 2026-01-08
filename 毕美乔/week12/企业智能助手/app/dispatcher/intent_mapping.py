@@ -4,7 +4,7 @@ from app.ai_agents.agent_role import AgentRole
 
 INTENT_TO_AGENT_ROLE = {
     Intent.NEWS: AgentRole.NEWS,
-    Intent.TOOL: AgentRole.TOOLS,
+    Intent.TOOLS: AgentRole.TOOLS,
     Intent.CHAT: AgentRole.CHAT,
 }
 
