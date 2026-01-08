@@ -1,9 +1,12 @@
 import streamlit as st
 from agents import set_default_openai_api, set_tracing_disabled
 from app.dispatcher.dispatcher import dispatch
-from app.session import get_or_create_session, destroy_agent_runtime
+import uuid
 import logging
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 # =====================
@@ -22,11 +25,8 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "你好，我是企业职能助手，可以 AI 对话，也可以调用内部工具。"}
     ]
 
-if "session_id" not in st.session_state:
-    st.session_state.session_id = None
-
-if "agent_session_id" not in st.session_state:
-    st.session_state.agent_session_id = None
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = str(uuid.uuid4())
 
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
@@ -47,20 +47,29 @@ with st.sidebar:
     model_name = st.selectbox("选择模型", ["qwen-flash", "qwen-max"])
     use_tool = st.checkbox("使用工具", value=True)
 
-    def clear_chat():
-        agent_sid = st.session_state.get("agent_session_id")
-        if agent_sid:
-            import asyncio
-            asyncio.run(destroy_agent_runtime(agent_sid))
 
-        # 重置 session 状态
-        st.session_state.agent_session_id = None
-        st.session_state.session_id = None
-        st.session_state["messages"] = [
-            {"role": "assistant", "content": "你好，我是企业职能助手，可以 AI 对话，也可以调用内部工具。"}
+    def clear_chat():
+        # 只清对话相关状态
+        keys_to_clear = [
+            "messages",
+            "pending_prompt",
+            "session_id",
+            "agent_session_id",
+            "running",
         ]
-        if "pending_prompt" in st.session_state:
-            del st.session_state.pending_prompt
+
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
+
+        # 重新初始化 messages
+        st.session_state["messages"] = [
+            {
+                "role": "assistant",
+                "content": "你好，我是企业职能助手，可以 AI 对话，也可以调用内部工具。"
+            }
+        ]
+        st.session_state["conversation_id"] = str(uuid.uuid4())
 
     st.button("清空聊天", on_click=clear_chat)
 
@@ -120,20 +129,17 @@ if ready_to_call:
     try:
         import asyncio
 
-        session = get_or_create_session(session_id)
+        conversation_id = st.session_state.conversation_id
         reply = asyncio.run(
             dispatch(
                     prompt=pending_prompt,
-                    biz_session=session,
+                    conversation_id=conversation_id,
                     model_name=model_name,
                     api_key=api_key,
                     server_url="http://localhost:8900/sse",
                     use_tool=use_tool,
             )
         )
-
-        st.session_state.session_id = session.session_id  # ✅ 业务
-        st.session_state.agent_session_id = session.agent_session_id  # ✅ runtime
 
         # 原地更新 assistant
         messages[-1]["content"] = reply
