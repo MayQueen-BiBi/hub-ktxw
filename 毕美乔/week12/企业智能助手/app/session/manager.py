@@ -61,9 +61,4 @@ async def destroy_agent_runtime(agent_sid: str):
     runtime = _AGENT_RUNTIME_STORE.pop(agent_sid, None)
     if not runtime:
         return
-
-    try:
-        if runtime.mcp_fsm:
-            await runtime.mcp_fsm.close()
-    finally:
-        await runtime.exit_stack.aclose()
+    await runtime.exit_stack.aclose()
