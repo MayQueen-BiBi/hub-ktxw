@@ -2,37 +2,66 @@ from typing import Optional, Any
 from agents.mcp.server import MCPServerSse
 from agents.mcp.util import ToolFilterCallable, ToolFilterContext
 from typing import List, Optional
+from app.dispatcher.intent import Intent
 
 
-def build_news_mcp_view(
-    server_url: str,
-    tool_filter: Optional[ToolFilterCallable] = None,
-) -> MCPServerSse:
+INTENT_TOOL_PREFIX = {
+    Intent.NEWS: ("news_",),
+    Intent.TOOLS: ("tools_",)
+}
+
+
+def make_intent_tool_filter(
+    intent: Intent,
+) -> ToolFilterCallable:
     """
-    News Agent 可见的 MCP View（列表形式返回）
-
-    - 默认只暴露 news 前缀工具
-    - tool_filter 是扩展位（不破坏默认策略）
+    根据 Router 判定的 intent
+    动态生成 MCP tool_filter
     """
 
-    def default_filter(ctx: ToolFilterContext, tool: Any) -> bool:
-        return tool.name.startswith("_news")
+    allowed_prefixes = INTENT_TOOL_PREFIX.get(intent, ())
 
-    mcp_view = MCPServerSse(
-        name="news-mcp_views-view",
-        params={"url": server_url},
-        tool_filter=tool_filter or default_filter,
-        client_session_timeout_seconds=20,
-    )
-    print(">>> MCPServerSse final URL:", mcp_view.params["url"])
-    # 返回列表
-    return mcp_view
+    if not allowed_prefixes:
+        raise ValueError(f"No tool prefixes configured for intent: {intent}")
+
+    # def _filter(ctx: ToolFilterContext, tool: Any) -> bool:
+    #     # 1️⃣ 能力边界（intent）
+    #     if not tool.name.startswith(allowed_prefixes):
+    #         return False
+    #
+    #     # 2️⃣ 权限控制（Context）
+    #     if tool.name.startswith("tools_") and not getattr(ctx, "is_pro_user", False):
+    #         return False
+    #
+    #     # 3️⃣ 未来：灰度 / quota / 实验
+    #     return True
+
+    def _filter(ctx: ToolFilterContext, tool: Any) -> bool:
+        allowed = tool.name.startswith(INTENT_TOOL_PREFIX[intent])
+
+        print(
+            f"[TOOL_FILTER]"
+            f" intent={intent.value}"
+            f" tool={tool.name}"
+            f" allowed={allowed}"
+        )
+
+        return allowed
+
+    return _filter
 
 
-def build_tools_mcp_view(
+def get_tool_policy(intent: Intent):
+    return {
+        "allowed_prefixes": INTENT_TOOL_PREFIX[intent],
+        "require_pro": intent == Intent.TOOLS,
+    }
+
+
+def build_mcp_view(
     server_url: str,
-    tool_filter: Optional[ToolFilterCallable] = None,
-) -> MCPServerSse:
+    intent: Intent
+) -> MCPServerSse | None:
     """
     Tools Agent 可见的 MCP View
 
@@ -40,12 +69,18 @@ def build_tools_mcp_view(
     - tool_filter 仅作为扩展位（权限 / 灰度 / 实验）
     """
 
+    if intent == Intent.CHAT:
+        return None
+
+    tool_filter = make_intent_tool_filter(intent)
+
     mcp_view = MCPServerSse(
-        name="tools-mcp_views-view",
+        name=f"{intent}-mcp_views-view",
         params={"url": server_url},
-        tool_filter=tool_filter,  # 可以是 None
+        tool_filter=tool_filter,
         client_session_timeout_seconds=20,
     )
     print(">>> MCPServerSse final URL:", mcp_view.params["url"])
+
     # 返回列表
     return mcp_view
