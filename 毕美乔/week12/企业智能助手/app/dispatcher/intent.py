@@ -3,7 +3,7 @@ from enum import Enum, auto
 
 class Intent(str, Enum):
     NEWS = "news"
-    TOOL = "tool"
+    TOOLS = "tools"
     CHAT = "chat"
 
 
@@ -73,7 +73,7 @@ def detect_intent(text: str, use_tool: bool) -> Intent:
         return Intent.NEWS
 
     if any(k in text for k in tool_keywords):
-        return Intent.TOOL
+        return Intent.TOOLS
 
     return Intent.CHAT
 
