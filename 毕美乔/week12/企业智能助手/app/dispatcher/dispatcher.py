@@ -1,99 +1,81 @@
 from app.ai_agents import build_agent, build_router_agent
-from app.session import SessionState, get_or_create_agent_runtime
+from app.store.conversation_store import conversation_store
 from app.mcp_views import build_mcp_view
-from .intent import Intent
 from .intent_mapping import map_intent_to_role
 from .parser import parse_intent
 from agents import Runner
 import json
 import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 
 async def dispatch(
     prompt: str,
-    biz_session: SessionState,
+    conversation_id: str,
     model_name: str,
     api_key: str,
     server_url: str,
     use_tool: bool,
 ) -> str:
-    """
-    dispatch 只使用 AgentRuntime，不管理生命周期。
-    MCP 为短生命周期，每次调用 ensure 生成新的 server 列表。
-    """
 
-    # ----------------------
-    # 1️⃣ 写入用户消息
-    # ----------------------
-    biz_session.messages.append({"role": "user", "content": prompt})
+    # 1️⃣ 读取历史
+    history = conversation_store.load(conversation_id)
 
-    # ----------------------
-    # 2️⃣ Router 判定 intent
-    # ----------------------
+    # 2️⃣ 写入用户消息
+    conversation_store.append(conversation_id, "user", prompt)
+
+    # 3️⃣ Router 判 intent
     router_agent = build_router_agent(model_name, api_key)
-    router_result = await Runner.run(router_agent, input=prompt, session=None)
+    router_result = await Runner.run(router_agent, input=prompt)
     route = json.loads(router_result.final_output)
     intent = parse_intent(route.get("intent", "none"))
 
-    biz_session.current_intent = intent
-    biz_session.slots.update(route.get("slots", {}))
     role = map_intent_to_role(intent)
 
-    # ----------------------
-    # 3️⃣ 获取 AgentRuntime
-    # ----------------------
-    agent_runtime = await get_or_create_agent_runtime(biz_session.agent_session_id)
-    biz_session.agent_session_id = agent_runtime.session.session_id
-
-    # ----------------------
     # 4️⃣ 构建 MCP server（短生命周期）
-    # ----------------------
-    mcp_server = None
-    if use_tool:
-        mcp_server = build_mcp_view(server_url, intent)
+    mcp_server = build_mcp_view(server_url, intent) if use_tool else None
 
-    # ----------------------
-    # 5️⃣ 构建 agent
-    # ----------------------
+    # 5️⃣ 构建 agent 并运行
+    # messages = history + [{"role": "user", "content": prompt}]
+    messages = [{"role": "user", "content": prompt}]
+
     if mcp_server:
         async with mcp_server:
             agent = build_agent(
                 role=role,
                 model_name=model_name,
                 api_key=api_key,
-                mcp_servers=[mcp_server]
+                mcp_servers=[mcp_server],
             )
-
-            try:
-                result = await Runner.run(agent, input=prompt, session=agent_runtime.session)
-            except Exception as e:
-                logger.error(f"Agent execution failed: {e}")
-                result = type("Dummy", (), {"final_output": f"执行失败: {e}"})()
-
+            result = await Runner.run(agent, input=messages)
     else:
         agent = build_agent(
             role=role,
             model_name=model_name,
             api_key=api_key,
         )
+        result = await Runner.run(agent, input=messages)
 
-        try:
-            result = await Runner.run(agent, input=prompt, session=agent_runtime.session)
-        except Exception as e:
-            logger.error(f"Agent execution failed: {e}")
-            result = type("Dummy", (), {"final_output": f"执行失败: {e}"})()
+    # 6️⃣ 写回 assistant
+    conversation_store.append(
+        conversation_id, "assistant", result.final_output
+    )
 
-    # ----------------------
-    # 7️⃣ 写回 assistant 消息
-    # ----------------------
-    biz_session.messages.append({"role": "assistant", "content": result.final_output})
-
-    # ----------------------
-    # 8️⃣ trace
-    # ----------------------
-    mcp_view = intent if intent in (Intent.NEWS, Intent.TOOLS) else "none"
-    biz_session.trace.append({"intent": intent, "mcp_view": mcp_view})
+    # trace
+    logger.info(
+        "conversation=%s intent=%s role=%s use_tool=%s",
+        conversation_id,
+        intent,
+        role,
+        use_tool,
+    )
 
     return result.final_output
+
 
