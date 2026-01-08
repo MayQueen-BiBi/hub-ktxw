@@ -1,9 +1,10 @@
 from app.ai_agents import build_agent, build_router_agent
 from app.session import SessionState, get_or_create_agent_runtime
-from app.ai_agents.registry import AGENT_CONFIG
+from app.mcp_views import build_mcp_view
+from .intent import Intent
 from .intent_mapping import map_intent_to_role
+from .parser import parse_intent
 from agents import Runner
-from contextlib import AsyncExitStack
 import json
 import logging
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ async def dispatch(
     router_agent = build_router_agent(model_name, api_key)
     router_result = await Runner.run(router_agent, input=prompt, session=None)
     route = json.loads(router_result.final_output)
-    intent = route.get("intent", "none")
+    intent = parse_intent(route.get("intent", "none"))
+
     biz_session.current_intent = intent
     biz_session.slots.update(route.get("slots", {}))
     role = map_intent_to_role(intent)
@@ -49,10 +51,7 @@ async def dispatch(
     # ----------------------
     mcp_server = None
     if use_tool:
-        config = AGENT_CONFIG[role]
-        builder = config.get("mcp_builder")
-        if builder:
-            mcp_server = builder(server_url)
+        mcp_server = build_mcp_view(server_url, intent)
 
     # ----------------------
     # 5️⃣ 构建 agent
@@ -93,7 +92,7 @@ async def dispatch(
     # ----------------------
     # 8️⃣ trace
     # ----------------------
-    mcp_view = "news" if intent == "news" else "tool" if intent == "tool" else "none"
+    mcp_view = intent if intent in (Intent.NEWS, Intent.TOOLS) else "none"
     biz_session.trace.append({"intent": intent, "mcp_view": mcp_view})
 
     return result.final_output
