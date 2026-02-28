@@ -1,4 +1,6 @@
-# 1 系统架构图
+# task3
+代码地址[查看源码](./09_DeepResearch.py)
+## 原始架构图
 
 ```mermaid
 graph TD
@@ -44,4 +46,29 @@ graph TD
     class L2,L3 agent;
     class T1 tool;
     class L3 highlight;   
+```
+## 优化后架构图
+```mermaid
+graph TD
+    A([开始]) --> B[Step 1: 全局搜索]
+    B --> C[Step 2: Orchestrator 生成 JSON 大纲]
+    C --> D{并发开启<br/>Semaphore=2}
+    
+    subgraph Iterative_Refinement [章节循环修正逻辑]
+        D --> E[Jina 搜索/补查]
+        E --> F[网页内容抓取]
+        F --> G[Drafting Agent 起草内容]
+        G --> H[Reflection Agent 审核质量]
+        H --> I{是否满足且<br/>尝试<3次?}
+        I -- 否 --> J[更新补查 Query]
+        J --> E
+        I -- 是 --> K[本章节完成]
+    end
+    
+    K --> L[Gather 汇总所有章节]
+    L --> M[Step 5: Orchestrator 终审整合]
+    M --> N([输出最终 MD 报告])
+
+    style I fill:#f9f,stroke:#333,stroke-width:2px
+    style Iterative_Refinement fill:#f5f5f5,stroke:#666,stroke-dasharray: 5 5
 ```
