@@ -20,7 +20,8 @@ flowchart TD
 
   P1 -->|check_gansu_price_pred\nforecast_date 与 info_date 相差 1 天| C2
   P1 -->|构造 GanSuAhead：mode=predict；96 点占位量/价| GA
-  P1 -->|Model('predict', params)| M --> GS
+  P1 -->|"Model('predict', params)"| M
+  M --> GS
   GS -->|DataEngine / PriceForecastFunc 读取| C1
   GS --> C2
   M -->|24小时 × 5报价+6系数| POUT["策略生产结果\nA: run\n价格四舍五入至 10，限制 [40, GanSuConst.price_max]\n系数断言：通常上限 1.2；plus 为 1.5"]
@@ -34,7 +35,7 @@ flowchart TD
   CMP -->|insert_strategy_profit / hourly| C2
   CMP --> F2["PNG / Excel 对比输出\nBASE_DIR 或 ALGO_SHARE_DIR 共享目录"]
 
-  B1 -->|GanSuAhead(update=False), query_datetime=2040-01-01 01| GA
+  B1 -->|"GanSuAhead(update=False), query_datetime=2040-01-01 01"| GA
   B1 -->|策略五段记录、价格、电量、节点价| C1
   B1 --> C2
   GA --> UNIT["strategy_compare\ndeclare_quantity=理论中标系数*预测电量\nprofit=dot(日前-实时, 申报/策略电量-实际电量)/实际总量"]
