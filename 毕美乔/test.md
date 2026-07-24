@@ -1,3 +1,4 @@
+```mermaid
 flowchart TD
   subgraph IN[外部输入 / 执行参数]
     P1["生产入口\nA: gansu_scripts/daily_strategy_write_mysql_new.py\n__main__: forecast_date=当日，info_date=forecast_date+1\n当前源码另硬编码 2026-07-19\n24 小时、5 段"]
@@ -38,3 +39,4 @@ flowchart TD
   B1 --> C2
   GA --> UNIT["strategy_compare\ndeclare_quantity=理论中标系数*预测电量\nprofit=dot(日前-实时, 申报/策略电量-实际电量)/实际总量"]
   UNIT --> F3["两个 Excel\n策略对比、策略对比计算中间数据"]
+```
